@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum ListingType {
+  HOARDING
+  KIOSK
+  GANTRY
+  TRANSIT
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  LIVE
+  REJECTED
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COUNTERED
+}
+
+// ─── User ────────────────────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  phone         String?
+  name          String
+  passwordHash  String
+  roles         Role[]   @default([USER])
+  isActive      Boolean  @default(true)
+  isVerified    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  listings       Listing[]
+  bookings       Booking[]
+  sentOffers     Offer[]        @relation("OfferSender")
+  receivedOffers Offer[]        @relation("OfferReceiver")
+  messages       Message[]
+  conversations  Conversation[] @relation("ConversationParticipants")
+  adminActions   AdminAction[]
+}
+
+// ─── Listing ─────────────────────────────────────────────
+
+model Listing {
+  id            String        @id @default(uuid())
+  ownerId       String
+  owner         User          @relation(fields: [ownerId], references: [id])
+  title         String
+  description   String
+  type          ListingType
+  price         Float
+  landmarks     String[]
+  latitude      Float
+  longitude     Float
+  status        ListingStatus @default(DRAFT)
+  isFeatured    Boolean       @default(false)
+  availableFrom DateTime?
+  availableTo   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  images        ListingImage[]
+  bookings      Booking[]
+  offerListings OfferListing[]
+  conversations Conversation[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([type])
+}
+
+model ListingImage {
+  id        String  @id @default(uuid())
+  listingId String
+  url       String
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+}
+
+// ─── Booking ─────────────────────────────────────────────
+
+model Booking {
+  id        String   @id @default(uuid())
+  listingId String
+  userId    String
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime @default(now())
+
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@index([listingId])
+  @@index([userId])
+}
+
+// ─── Offer ───────────────────────────────────────────────
+
+model Offer {
+  id              String      @id @default(uuid())
+  senderId        String
+  receiverId      String
+  totalPrice      Float
+  negotiatedPrice Float?
+  status          OfferStatus @default(PENDING)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  sender        User           @relation("OfferSender", fields: [senderId], references: [id])
+  receiver      User           @relation("OfferReceiver", fields: [receiverId], references: [id])
+  offerListings OfferListing[]
+  conversation  Conversation?
+
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model OfferListing {
+  offerId   String
+  listingId String
+  offer     Offer   @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  listing   Listing @relation(fields: [listingId], references: [id])
+
+  @@id([offerId, listingId])
+}
+
+// ─── Conversation / Chat ─────────────────────────────────
+
+model Conversation {
+  id        String   @id @default(uuid())
+  offerId   String?  @unique
+  listingId String?
+  createdAt DateTime @default(now())
+
+  offer        Offer?    @relation(fields: [offerId], references: [id])
+  listing      Listing?  @relation(fields: [listingId], references: [id])
+  participants User[]    @relation("ConversationParticipants")
+  messages     Message[]
+
+  @@index([listingId])
+}
+
+model Message {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderId       String
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id])
+
+  @@index([conversationId])
+}
+
+// ─── Admin Audit ─────────────────────────────────────────
+
+model AdminAction {
+  id              String   @id @default(uuid())
+  adminId         String
+  action          String
+  targetUserId    String?
+  targetListingId String?
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  admin User @relation(fields: [adminId], references: [id])
+
+  @@index([adminId])
+}
